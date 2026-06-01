@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-export const BASE_URL = 'http://plataforma-servicos-prod.eba-m2g53m4u.sa-east-1.elasticbeanstalk.com';
+export const BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://plataforma-servicos-prod.eba-m2g53m4u.sa-east-1.elasticbeanstalk.com';
 
 export const api = axios.create({
   baseURL: BASE_URL,
