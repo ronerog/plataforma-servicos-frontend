@@ -14,6 +14,7 @@ interface Solicitacao {
   dataSolicitacao: string;
   prazoAvaliacao: string;
   statusSolicitacao: string;
+  cidadaoAvaliou: boolean;
 }
 
 export default function AvaliacoesScreen() {
@@ -24,7 +25,7 @@ export default function AvaliacoesScreen() {
   useEffect(() => {
     getMinhasSolicitacoes().then(r => {
       const p = r.data.filter((s: Solicitacao) =>
-        s.statusSolicitacao === 'CONCLUIDA' || s.statusSolicitacao === 'ACEITA'
+        s.statusSolicitacao === 'CONCLUIDA' && !s.cidadaoAvaliou
       );
       setPendentes(p);
       setLoading(false);

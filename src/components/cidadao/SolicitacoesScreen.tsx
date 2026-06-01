@@ -15,6 +15,7 @@ interface Solicitacao {
   dataSolicitacao: string;
   prazoAvaliacao: string;
   statusSolicitacao: string;
+  cidadaoAvaliou: boolean;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
@@ -41,6 +42,13 @@ export default function SolicitacoesScreen() {
     return new Date(s).toLocaleDateString('pt-BR');
   }
 
+  function handleAvaliado(id: number, nota: number) {
+    setSolicitacoes(prev =>
+      prev.map(s => s.id === id ? { ...s, cidadaoAvaliou: true, _nota: nota } as Solicitacao & { _nota: number } : s)
+    );
+    setAvaliacaoModal(null);
+  }
+
   if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--ink-3)' }}>Carregando…</div>;
 
   return (
@@ -51,7 +59,7 @@ export default function SolicitacoesScreen() {
         <AvaliacaoModal
           solicitacao={avaliacaoModal}
           onClose={() => setAvaliacaoModal(null)}
-          onSave={() => { setAvaliacaoModal(null); }}
+          onSave={handleAvaliado}
         />
       )}
 
@@ -63,6 +71,7 @@ export default function SolicitacoesScreen() {
             const st = STATUS_COLORS[s.statusSolicitacao] ?? { bg: 'var(--cream)', color: 'var(--ink-3)', label: s.statusSolicitacao };
             const isAceita = s.statusSolicitacao === 'ACEITA';
             const isConcluida = s.statusSolicitacao === 'CONCLUIDA';
+            const nota = (s as Solicitacao & { _nota?: number })._nota;
             const whatsappUrl = isAceita && s.whatsappPrestador
               ? `https://wa.me/55${s.whatsappPrestador.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Minha solicitação de "${s.nomeServico}" foi aceita e gostaria de combinar os detalhes.`)}`
               : null;
@@ -86,13 +95,24 @@ export default function SolicitacoesScreen() {
                     </div>
                   </div>
                   {isConcluida && (
-                    <button onClick={() => setAvaliacaoModal(s)} style={{
-                      padding: '8px 16px', borderRadius: 10, border: '1.5px solid var(--coral)',
-                      background: 'transparent', color: 'var(--coral)',
-                      fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                    }}>
-                      Avaliar
-                    </button>
+                    s.cidadaoAvaliou ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          {[1,2,3,4,5].map(n => (
+                            <span key={n} style={{ fontSize: 14, color: n <= (nota ?? 5) ? '#F2552B' : 'var(--line)' }}>★</span>
+                          ))}
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>Avaliado</span>
+                      </div>
+                    ) : (
+                      <button onClick={() => setAvaliacaoModal(s)} style={{
+                        padding: '8px 16px', borderRadius: 10, border: '1.5px solid var(--coral)',
+                        background: 'transparent', color: 'var(--coral)',
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                      }}>
+                        Avaliar
+                      </button>
+                    )
                   )}
                 </div>
                 {isAceita && (
@@ -121,7 +141,7 @@ export default function SolicitacoesScreen() {
   );
 }
 
-function AvaliacaoModal({ solicitacao, onClose, onSave }: { solicitacao: Solicitacao; onClose: () => void; onSave: () => void }) {
+function AvaliacaoModal({ solicitacao, onClose, onSave }: { solicitacao: Solicitacao; onClose: () => void; onSave: (id: number, nota: number) => void }) {
   const [nota, setNota] = useState(5);
   const [comentario, setComentario] = useState('');
   const [servicoRealizado, setServicoRealizado] = useState(true);
@@ -138,7 +158,7 @@ function AvaliacaoModal({ solicitacao, onClose, onSave }: { solicitacao: Solicit
         servicoRealizado,
         motivoNaoRealizacao: !servicoRealizado ? motivo : undefined,
       });
-      onSave();
+      onSave(solicitacao.id, nota);
     } catch {
       toast.error('Erro ao salvar avaliação.');
     } finally {
