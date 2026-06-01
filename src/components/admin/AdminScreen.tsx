@@ -281,8 +281,14 @@ function btnStyle(color: string, bg: string): React.CSSProperties {
 function ReprovarButton({ idPerfil, onReprovado }: { idPerfil: number; onReprovado: () => void }) {
   const [loading, setLoading] = useState(false);
 
-  async function handleReprovar() {
-    if (!confirm('Reprovar este prestador?')) return;
+  function handleReprovar() {
+    toast('Reprovar este prestador?', {
+      action: { label: 'Reprovar', onClick: () => confirmarReprovar() },
+      cancel: { label: 'Cancelar', onClick: () => {} },
+    });
+  }
+
+  async function confirmarReprovar() {
     setLoading(true);
     try {
       await reprovarPrestador(idPerfil);

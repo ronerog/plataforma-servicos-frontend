@@ -55,8 +55,14 @@ export default function MeusServicosScreen() {
     } catch { /* ignore */ } finally { setActionLoading(null); }
   }
 
-  async function handleExcluir(id: number) {
-    if (!window.confirm('Excluir este serviço permanentemente?')) return;
+  function handleExcluir(id: number) {
+    toast('Excluir este serviço permanentemente?', {
+      action: { label: 'Excluir', onClick: () => confirmarExcluir(id) },
+      cancel: { label: 'Cancelar', onClick: () => {} },
+    });
+  }
+
+  async function confirmarExcluir(id: number) {
     setActionLoading(id);
     try {
       await excluirServico(id);

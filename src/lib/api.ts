@@ -126,6 +126,12 @@ export const avaliarComoPrestador = (data: Record<string, unknown>) =>
 export const getAvaliacoesSolicitacao = (idSolicitacao: number) =>
   api.get(`/api/avaliacoes/solicitacao/${idSolicitacao}`);
 
+export const getAvaliacoesServico = (idServico: number) =>
+  api.get(`/api/avaliacoes/servico/${idServico}`);
+
+export const getAvaliacoesCidadaoPerfil = (idPerfilCidadao: number) =>
+  api.get(`/api/avaliacoes/cidadao-perfil/${idPerfilCidadao}`);
+
 // Ocorrências
 export const criarOcorrencia = (data: Record<string, unknown>) =>
   api.post('/api/ocorrencias', data);

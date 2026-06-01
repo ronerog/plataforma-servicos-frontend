@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../ui/PageHeader';
 import Icon from '../ui/Icon';
+import Avatar from '../ui/Avatar';
 import EmptyState from '../ui/EmptyState';
-import { getSolicitacoesRecebidas, aceitarSolicitacao, recusarSolicitacao, concluirSolicitacao, avaliarComoPrestador } from '@/lib/api';
+import { getSolicitacoesRecebidas, aceitarSolicitacao, recusarSolicitacao, concluirSolicitacao, avaliarComoPrestador, getAvaliacoesCidadaoPerfil } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface Solicitacao {
@@ -12,9 +13,20 @@ interface Solicitacao {
   nomeServico: string;
   nomeCidadao: string;
   celularCidadao: string;
+  idPerfilCidadao: number;
   dataSolicitacao: string;
   prazoAvaliacao: string;
   statusSolicitacao: string;
+  prestadorAvaliou: boolean;
+}
+
+interface AvaliacaoCidadao {
+  id: number;
+  nota: number;
+  comentario: string;
+  nomeAvaliador: string;
+  dataAvaliacao: string;
+  servicoRealizado: boolean;
 }
 
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
@@ -29,6 +41,7 @@ export default function RecebidosScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [avaliacaoModal, setAvaliacaoModal] = useState<Solicitacao | null>(null);
+  const [historicoAberto, setHistoricoAberto] = useState<number | null>(null);
 
   useEffect(() => {
     getSolicitacoesRecebidas()
@@ -48,8 +61,14 @@ export default function RecebidosScreen() {
     finally { setActionLoading(null); }
   }
 
-  async function handleRecusar(id: number) {
-    if (!window.confirm('Recusar esta solicitação?')) return;
+  function handleRecusar(id: number) {
+    toast('Recusar esta solicitação?', {
+      action: { label: 'Recusar', onClick: () => confirmarRecusar(id) },
+      cancel: { label: 'Cancelar', onClick: () => {} },
+    });
+  }
+
+  async function confirmarRecusar(id: number) {
     setActionLoading(id);
     try { update((await recusarSolicitacao(id)).data); }
     catch { toast.error('Erro ao recusar a solicitação.'); }
@@ -71,7 +90,12 @@ export default function RecebidosScreen() {
         <AvaliacaoModal
           solicitacao={avaliacaoModal}
           onClose={() => setAvaliacaoModal(null)}
-          onSaved={() => setAvaliacaoModal(null)}
+          onSaved={(id, nota) => {
+            setSolicitacoes(list =>
+              list.map(s => s.id === id ? { ...s, prestadorAvaliou: true, _nota: nota } as Solicitacao & { _nota: number } : s)
+            );
+            setAvaliacaoModal(null);
+          }}
         />
       )}
 
@@ -127,7 +151,7 @@ export default function RecebidosScreen() {
                 </div>
 
                 {(s.statusSolicitacao === 'PENDENTE' || s.statusSolicitacao === 'ACEITA' || s.statusSolicitacao === 'CONCLUIDA') && (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-2)', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-2)', flexWrap: 'wrap', alignItems: 'center' }}>
                     {s.statusSolicitacao === 'PENDENTE' && (
                       <>
                         <Btn onClick={() => handleAceitar(s.id)} disabled={busy} color="var(--green)" bg="var(--green-soft)">
@@ -144,15 +168,109 @@ export default function RecebidosScreen() {
                       </Btn>
                     )}
                     {s.statusSolicitacao === 'CONCLUIDA' && (
-                      <Btn onClick={() => setAvaliacaoModal(s)} disabled={busy} color="var(--coral)" bg="var(--coral-tint)">
-                        Avaliar cidadão
-                      </Btn>
+                      s.prestadorAvaliou ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ display: 'flex', gap: 2 }}>
+                            {[1,2,3,4,5].map(n => (
+                              <span key={n} style={{ fontSize: 14, color: n <= ((s as Solicitacao & { _nota?: number })._nota ?? 5) ? '#F2552B' : 'var(--line)' }}>★</span>
+                            ))}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>Avaliado</span>
+                        </div>
+                      ) : (
+                        <Btn onClick={() => setAvaliacaoModal(s)} disabled={busy} color="var(--coral)" bg="var(--coral-tint)">
+                          Avaliar cidadão
+                        </Btn>
+                      )
                     )}
+                    <button
+                      onClick={() => setHistoricoAberto(historicoAberto === s.id ? null : s.id)}
+                      style={{
+                        marginLeft: 'auto', height: 34, padding: '0 12px', borderRadius: 8,
+                        border: '1px solid var(--line)', background: 'none', cursor: 'pointer',
+                        fontSize: 12, fontWeight: 700, color: 'var(--ink-3)',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}
+                    >
+                      <Icon name="star" size={13}/> Histórico do cidadão
+                      <Icon name={historicoAberto === s.id ? 'chevronUp' : 'chevronDown'} size={12}/>
+                    </button>
                   </div>
+                )}
+                {historicoAberto === s.id && (
+                  <HistoricoCidadao idPerfilCidadao={s.idPerfilCidadao} nomeCidadao={s.nomeCidadao}/>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoricoCidadao({ idPerfilCidadao, nomeCidadao }: { idPerfilCidadao: number; nomeCidadao: string }) {
+  const [avaliacoes, setAvaliacoes] = useState<AvaliacaoCidadao[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAvaliacoesCidadaoPerfil(idPerfilCidadao)
+      .then(r => setAvaliacoes(r.data))
+      .catch(() => setAvaliacoes([]))
+      .finally(() => setLoading(false));
+  }, [idPerfilCidadao]);
+
+  const media = avaliacoes.length > 0
+    ? (avaliacoes.reduce((acc, a) => acc + a.nota, 0) / avaliacoes.length).toFixed(1)
+    : null;
+
+  return (
+    <div style={{
+      marginTop: 12, padding: '14px 16px', borderRadius: 10,
+      background: 'var(--cream)', border: '1px solid var(--line-2)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <Avatar name={nomeCidadao} size={32}/>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>{nomeCidadao}</div>
+          {media ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>{media}</span>
+              <div style={{ display: 'flex', gap: 1 }}>
+                {[1,2,3,4,5].map(n => (
+                  <span key={n} style={{ fontSize: 11, color: n <= Math.round(Number(media)) ? '#F2552B' : 'var(--line)' }}>★</span>
+                ))}
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>({avaliacoes.length} avaliação{avaliacoes.length !== 1 ? 'ões' : ''})</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>Sem avaliações ainda</div>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Carregando…</div>
+      ) : avaliacoes.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Este cidadão ainda não recebeu nenhuma avaliação de prestadores.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {avaliacoes.map(a => (
+            <div key={a.id} style={{ background: 'var(--paper)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>{a.nomeAvaliador}</span>
+                <div style={{ display: 'flex', gap: 1 }}>
+                  {[1,2,3,4,5].map(n => (
+                    <span key={n} style={{ fontSize: 11, color: n <= a.nota ? '#F2552B' : 'var(--line)' }}>★</span>
+                  ))}
+                </div>
+              </div>
+              {!a.servicoRealizado && (
+                <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600, marginBottom: 3 }}>Serviço não realizado</div>
+              )}
+              <p style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: 0, lineHeight: 1.45 }}>{a.comentario}</p>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -174,7 +292,7 @@ function Btn({ children, onClick, disabled, color, bg }: {
   );
 }
 
-function AvaliacaoModal({ solicitacao, onClose, onSaved }: { solicitacao: Solicitacao; onClose: () => void; onSaved: () => void }) {
+function AvaliacaoModal({ solicitacao, onClose, onSaved }: { solicitacao: Solicitacao; onClose: () => void; onSaved: (id: number, nota: number) => void }) {
   const [nota, setNota] = useState(5);
   const [comentario, setComentario] = useState('');
   const [servicoRealizado, setServicoRealizado] = useState(true);
@@ -192,7 +310,7 @@ function AvaliacaoModal({ solicitacao, onClose, onSaved }: { solicitacao: Solici
         servicoRealizado,
         motivoNaoRealizacao: !servicoRealizado ? motivo : undefined,
       });
-      onSaved();
+      onSaved(solicitacao.id, nota);
     } catch {
       toast.error('Erro ao salvar avaliação.');
     } finally {

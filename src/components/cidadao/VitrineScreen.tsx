@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PageHeader from '../ui/PageHeader';
 import Icon from '../ui/Icon';
 import Avatar from '../ui/Avatar';
 import EmptyState from '../ui/EmptyState';
-import { getServicos, getCategorias, criarSolicitacao, getFotoUrl } from '@/lib/api';
+import { getServicos, getCategorias, criarSolicitacao, getFotoUrl, getAvaliacoesServico } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -15,17 +16,28 @@ interface Servico {
   nomeCategoria: string; statusServico: string; nomePrestador: string;
   whatsapp?: string; fotoIds: number[];
 }
+interface Avaliacao {
+  id: number; nota: number; comentario: string;
+  nomeAvaliador: string; dataAvaliacao: string; servicoRealizado: boolean;
+}
 
 export default function VitrineScreen() {
   const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const idParam = searchParams.get('id');
+
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [q, setQ] = useState('');
   const [catFiltro, setCatFiltro] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [detalhe, setDetalhe] = useState<Servico | null>(null);
   const [solicitandoId, setSolicitandoId] = useState<number | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
+  const [loadingAvaliacoes, setLoadingAvaliacoes] = useState(false);
+
+  const detalhe = idParam ? (servicos.find(s => String(s.id) === idParam) ?? null) : null;
 
   useEffect(() => {
     Promise.all([getServicos(), getCategorias()]).then(([sv, ct]) => {
@@ -34,6 +46,15 @@ export default function VitrineScreen() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (!detalhe) { setAvaliacoes([]); return; }
+    setLoadingAvaliacoes(true);
+    getAvaliacoesServico(detalhe.id)
+      .then(r => setAvaliacoes(r.data))
+      .catch(() => setAvaliacoes([]))
+      .finally(() => setLoadingAvaliacoes(false));
+  }, [detalhe?.id]);
 
   const filtered = servicos.filter(s => {
     if (catFiltro !== 'all') {
@@ -52,7 +73,7 @@ export default function VitrineScreen() {
     try {
       await criarSolicitacao(idServico);
       setSuccessMsg('Solicitação enviada! Verifique em "Minhas Solicitações".');
-      setDetalhe(null);
+      router.push('/vitrine');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch {
       toast.error('Não foi possível enviar a solicitação. Tente novamente.');
@@ -61,7 +82,15 @@ export default function VitrineScreen() {
     }
   }
 
+  function formatDate(s: string) {
+    if (!s) return '';
+    return new Date(s).toLocaleDateString('pt-BR');
+  }
+
   if (detalhe) {
+    const mediaNotas = avaliacoes.length > 0
+      ? (avaliacoes.reduce((acc, a) => acc + a.nota, 0) / avaliacoes.length).toFixed(1)
+      : null;
 
     return (
       <div>
@@ -70,7 +99,7 @@ export default function VitrineScreen() {
           subtitle={`Publicado por ${detalhe.nomePrestador}`}
           breadcrumb={['Serviços', detalhe.nomeCategoria, detalhe.titulo]}
           actions={[
-            <button key="back" onClick={() => setDetalhe(null)} style={{
+            <button key="back" onClick={() => router.push('/vitrine')} style={{
               height: 40, padding: '0 14px', borderRadius: 10,
               background: 'var(--paper)', border: '1px solid var(--line)',
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -92,7 +121,8 @@ export default function VitrineScreen() {
                 ))}
               </div>
             )}
-            <div style={{ background: 'var(--paper)', borderRadius: 16, border: '1px solid var(--line-2)', padding: 24 }}>
+
+            <div style={{ background: 'var(--paper)', borderRadius: 16, border: '1px solid var(--line-2)', padding: 24, marginBottom: 20 }}>
               <div style={{ fontSize: 11, color: 'var(--coral)', fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
                 {detalhe.nomeCategoria}
               </div>
@@ -100,7 +130,56 @@ export default function VitrineScreen() {
                 {detalhe.descricao || 'Nenhuma descrição fornecida.'}
               </p>
             </div>
+
+            <div style={{ background: 'var(--paper)', borderRadius: 16, border: '1px solid var(--line-2)', padding: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Avaliações</div>
+                {mediaNotas && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--coral)' }}>{mediaNotas}</span>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {[1,2,3,4,5].map(n => (
+                        <span key={n} style={{ fontSize: 14, color: n <= Math.round(Number(mediaNotas)) ? '#F2552B' : 'var(--line)' }}>★</span>
+                      ))}
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>({avaliacoes.length})</span>
+                  </div>
+                )}
+              </div>
+
+              {loadingAvaliacoes ? (
+                <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Carregando avaliações…</div>
+              ) : avaliacoes.length === 0 ? (
+                <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Nenhuma avaliação ainda.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {avaliacoes.map(a => (
+                    <div key={a.id} style={{ borderBottom: '1px solid var(--line-2)', paddingBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <Avatar name={a.nomeAvaliador} size={30}/>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{a.nomeAvaliador}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{formatDate(a.dataAvaliacao)}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          {[1,2,3,4,5].map(n => (
+                            <span key={n} style={{ fontSize: 13, color: n <= a.nota ? '#F2552B' : 'var(--line)' }}>★</span>
+                          ))}
+                        </div>
+                      </div>
+                      {!a.servicoRealizado && (
+                        <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600, marginBottom: 4 }}>
+                          Serviço não foi realizado
+                        </div>
+                      )}
+                      <p style={{ fontSize: 13.5, color: 'var(--ink-2)', margin: 0, lineHeight: 1.5 }}>{a.comentario}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--paper)', borderRadius: 16, border: '1px solid var(--line-2)', padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -190,7 +269,7 @@ export default function VitrineScreen() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 16 }}>
           {filtered.map(s => (
-            <ServiceCard key={s.id} servico={s} onClick={() => setDetalhe(s)}/>
+            <ServiceCard key={s.id} servico={s} onClick={() => router.push(`/vitrine?id=${s.id}`)}/>
           ))}
         </div>
       )}
